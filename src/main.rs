@@ -181,13 +181,15 @@ fn run_import() -> Result<bool, String> {
     if report.added > 0 {
         storage::save(&store).map_err(|e| e.to_string())?;
     }
+    // A fatal source error (missing/unreadable config) is an error exit, not a
+    // cheerful "导入完成 新增 0" — scripts need to see the difference.
+    if let Some(err) = &report.error {
+        return Err(err.clone());
+    }
     println!(
         "导入完成: 新增 {} · 重复跳过 {} · 通配符跳过 {}",
         report.added, report.skipped_dup, report.skipped_wild
     );
-    if let Some(err) = &report.error {
-        println!("警告: {err}");
-    }
     Ok(true)
 }
 

@@ -159,7 +159,7 @@ old-db               10.0.0.12:2222         db               数据库          
 ## 测试
 
 ```bash
-cargo test          # 单元 + CLI 集成 + 渲染快照，共 101 个
+cargo test          # 单元 + CLI 集成 + 渲染快照，共 102 个
 cargo clippy --all-targets   # 0 warning
 ```
 

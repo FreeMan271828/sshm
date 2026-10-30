@@ -191,6 +191,21 @@ Host db *.example.com
 }
 
 #[test]
+fn import_without_ssh_config_is_an_error_exit() {
+    let home = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    let envs = [("HOME", home.path()), ("USERPROFILE", home.path())];
+    let out = run(&["import"], config.path(), &envs);
+    assert!(!out.status.success(), "missing config must fail");
+    assert!(stderr(&out).contains("未找到"), "got: {}", stderr(&out));
+    assert!(
+        stdout(&out).is_empty(),
+        "no cheerful '导入完成' on failure: {}",
+        stdout(&out)
+    );
+}
+
+#[test]
 fn config_flag_isolates_the_database() {
     let dir = tempfile::tempdir().unwrap();
     write_store(dir.path(), vec![host("1", "only-here", true, None)]);
