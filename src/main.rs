@@ -214,9 +214,22 @@ fn run_event_loop(
     terminal: &mut ratatui::DefaultTerminal,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut pending_test: Option<(TestCtx, Receiver<TestOutcome>)> = None;
+    // Test hook: `SSHM_TUI_EXIT_AFTER_MS=1200` renders the real TUI and exits,
+    // so a smoke test can prove init/draw/restore work on a real console.
+    let deadline = std::env::var("SSHM_TUI_EXIT_AFTER_MS")
+        .ok()
+        .and_then(|raw| raw.trim().parse::<u64>().ok())
+        .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms));
 
     while app.running {
         terminal.draw(|frame| ui::draw(app, frame))?;
+
+        if let Some(at) = deadline
+            && std::time::Instant::now() >= at
+        {
+            app.running = false;
+            break;
+        }
 
         // Drain test results first (they change what the next frame shows).
         if let Some((ctx, rx)) = &pending_test {

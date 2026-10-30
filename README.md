@@ -173,6 +173,12 @@ cargo clippy --all-targets   # 0 warning
 | CLI | `tests/cli.rs` | 真实启动 `sshm list/import --json`，断言不泄露密码 |
 | 渲染 | `tests/render.rs` | `TestBackend` 无头渲染：列表/表单/帮助/弹窗/极窄终端 |
 
+真实终端冒烟（启动 TUI、渲染一帧后自动退出，验证 init/restore 正常）：
+
+```bash
+SSHM_TUI_EXIT_AFTER_MS=1500 cargo run --release -- --config /tmp/sshm-demo
+```
+
 ## 项目结构
 
 ```text
