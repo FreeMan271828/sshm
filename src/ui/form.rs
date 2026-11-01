@@ -8,7 +8,7 @@ use ratatui::widgets::{Block, Paragraph};
 
 use crate::app::{App, Field, FormState, TestCtx, TestState};
 use crate::ssh::TestOutcome;
-use crate::ui::{centered_rect, disp_width, fit_cells, theme};
+use crate::ui::{centered_rect, fit_cells, pad_disp, theme};
 
 /// Box width; the 8-cell label column leaves ~55 cells for values at 66 wide.
 const BOX_WIDTH: u16 = 66;
@@ -216,16 +216,6 @@ fn render_footer(frame: &mut Frame, inner: Rect, y: u16) {
         Paragraph::new(Line::from(spans)),
         Rect::new(inner.x, y, inner.width, 1),
     );
-}
-
-/// Pad a label to a fixed display width using the ASCII/wide heuristic.
-fn pad_disp(s: &str, width: usize) -> String {
-    let mut out = String::from(s);
-    let used = disp_width(s);
-    if used < width {
-        out.push_str(&" ".repeat(width - used));
-    }
-    out
 }
 
 /// Flatten a styled line back to one truncated styled line (for the result

@@ -66,6 +66,6 @@ fn is_section(line: &str) -> bool {
     !line.starts_with(' ')
         && matches!(
             trimmed,
-            "列表" | "表单" | "对话框" | "排序说明" | "数据文件"
+            "列表" | "表单" | "对话框" | "排序说明" | "设置（o）" | "数据文件"
         )
 }

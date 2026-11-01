@@ -8,6 +8,7 @@ pub mod dialogs;
 pub mod form;
 pub mod help;
 pub mod list;
+pub mod settings;
 pub mod theme;
 
 use ratatui::Frame;
@@ -24,6 +25,7 @@ pub fn draw(app: &App, frame: &mut Frame) {
         Mode::List => list::draw(app, frame),
         Mode::Form => form::draw(app, frame),
         Mode::Help => help::draw(app, frame),
+        Mode::Settings => settings::draw(app, frame),
     }
     if let Some((msg, _)) = &app.toast {
         dialogs::draw_toast(frame, msg);
@@ -42,7 +44,7 @@ pub fn help_lines() -> &'static [&'static str] {
         "  k / ↑            向上移动选择",
         "  g / G            跳到第一条 / 最后一条",
         "  PgUp / PgDn      上翻 / 下翻 10 行",
-        "  Enter            连接所选主机（启动系统 ssh）",
+        "  Enter            连接所选主机（按设置在新标签页 / 当前标签页打开）",
         "  a                新增主机",
         "  e                编辑所选主机",
         "  d                删除所选主机（需确认）",
@@ -52,6 +54,7 @@ pub fn help_lines() -> &'static [&'static str] {
         "  s                切换排序：默认 ↔ 最近使用",
         "  i                从 ~/.ssh/config 导入主机",
         "  r                从磁盘重新加载（丢弃未保存的修改）",
+        "  o                设置：打开位置 / 默认终端",
         "  ? / F1           打开本帮助",
         "  q / Esc / Ctrl+C 退出",
         "",
@@ -75,6 +78,14 @@ pub fn help_lines() -> &'static [&'static str] {
         "  默认：      分类 → 名称 排序",
         "  最近使用：  最近连接过的排在前面",
         "  不变式：    有效主机永远排在无效主机之前（两种模式都如此）",
+        "",
+        "设置（o）",
+        "  打开位置    新建标签页：新终端页签运行 ssh，列表继续可用（默认）",
+        "              当前标签页：暂停 TUI，ssh 占用本终端，退出后回到列表",
+        "  默认终端    自动：跟随当前终端（Tabby / WezTerm / Windows Terminal）",
+        "              Windows 可选：Tabby / WezTerm / Windows Terminal / PowerShell / cmd / bash",
+        "              Unix 可选：Tabby / WezTerm / bash / zsh",
+        "  保存        修改立即写入 hosts.json 的 settings 段",
         "",
         "数据文件",
         "  主机数据保存在平台配置目录下的 sshm/hosts.json：",
@@ -108,6 +119,16 @@ pub(crate) fn fmt_last_used(ts: Option<i64>) -> String {
             _ => "-".into(),
         }
     }
+}
+
+/// Pad a label to a fixed display width using the ASCII/wide heuristic.
+pub(crate) fn pad_disp(s: &str, width: usize) -> String {
+    let mut out = String::from(s);
+    let used = disp_width(s);
+    if used < width {
+        out.push_str(&" ".repeat(width - used));
+    }
+    out
 }
 
 /// Char-count truncation with a trailing ellipsis. `unicode-width` is not a

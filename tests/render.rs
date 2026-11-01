@@ -222,6 +222,51 @@ fn toast_is_rendered_above_the_footer() {
 }
 
 #[test]
+fn settings_screen_shows_open_mode_and_terminal() {
+    let mut app = app_with(&[]);
+    app.open_settings();
+    let screen = render(&app, 100, 24);
+    assert!(screen.contains("设置"), "settings title:\n{screen}");
+    assert!(screen.contains("打开位置"), "{screen}");
+    assert!(screen.contains("默认终端"), "{screen}");
+    assert!(
+        screen.contains("新建标签页"),
+        "default open mode:\n{screen}"
+    );
+    assert!(screen.contains("自动"), "default terminal:\n{screen}");
+    assert!(screen.contains("立即保存"), "save hint:\n{screen}");
+}
+
+#[test]
+fn settings_screen_reflects_a_change_and_the_current_tab_hint() {
+    let mut app = app_with(&[]);
+    app.open_settings();
+    press(&mut app, KeyCode::Left); // NewTab -> CurrentTab
+    let screen = render(&app, 100, 24);
+    assert!(screen.contains("当前标签页"), "{screen}");
+    assert!(
+        screen.contains("不生效"),
+        "terminal choice is ignored in current-tab mode:\n{screen}"
+    );
+}
+
+#[test]
+fn settings_screen_cycles_through_terminal_choices() {
+    let mut app = app_with(&[]);
+    app.open_settings();
+    press(&mut app, KeyCode::Tab); // focus the terminal row
+    press(&mut app, KeyCode::Right); // Auto -> Tabby
+    let tabby = render(&app, 100, 24);
+    assert!(tabby.contains("Tabby"), "{tabby}");
+    assert!(tabby.contains("确认"), "Tabby CLI hint:\n{tabby}");
+
+    press(&mut app, KeyCode::Right); // Tabby -> WezTerm
+    let wezterm = render(&app, 100, 24);
+    assert!(wezterm.contains("WezTerm"), "{wezterm}");
+    assert!(wezterm.contains("wezterm cli spawn"), "{wezterm}");
+}
+
+#[test]
 fn tiny_terminals_never_panic() {
     for (w, h) in [(20u16, 6u16), (40, 10), (80, 12)] {
         let mut app =
@@ -230,6 +275,10 @@ fn tiny_terminals_never_panic() {
 
         app.mode = Mode::Help;
         render(&app, w, h);
+
+        app.open_settings();
+        render(&app, w, h);
+        app.close_settings();
 
         app.mode = Mode::Form;
         app.form = Some(sshm::app::FormState::new(None));

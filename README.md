@@ -5,6 +5,8 @@
 ## 特性
 
 - **连接增删改查（CRUD）**：`a` 新增、`e` 编辑、`d` 删除（带确认）、`Enter` 一键连接
+- **打开位置可选**：新建标签页（默认，列表继续可用）或当前标签页，`o` 随时切换，配置立即落盘
+- **默认终端可选**：自动跟随所在终端（Tabby / WezTerm / Windows Terminal），也可指定 Tabby、WezTerm、Windows Terminal、PowerShell、cmd、bash（Unix 另有 zsh）
 - **完整字段**：IP/主机、端口（默认 22）、账号、密码、备注、分类、是否有效
 - **智能排序**：默认 / 最近使用两种模式，两种模式下**有效连接永远排在无效连接前面**
 - **编辑即复活**：编辑一个无效配置并保存后，默认恢复为有效
@@ -47,6 +49,7 @@ sshm
 | `i` | 从 `~/.ssh/config` 导入 |
 | `r` | 从磁盘重新加载 |
 | `s` | 切换排序模式（默认 ⇄ 最近使用） |
+| `o` | 打开设置（打开位置 / 默认终端） |
 | `/` | 搜索/过滤（字符追加；`Esc` 清空并退出，`Enter` 退出搜索） |
 | `?` / `F1` | 打开/关闭帮助 |
 | `q` / `Esc` | 退出 |
@@ -92,6 +95,24 @@ sshm
 
 `last_used_at` / `use_count` 只在真正发起连接（`Enter`）时更新；连接测试只显示结果，不计入使用统计。`s` 键随时切换排序，列表立即重排。TUI 列表与 `sshm list` 共用同一个排序函数，不存在两套顺序。
 
+## 设置：打开位置与默认终端
+
+列表里按 `o` 打开设置页，两项配置修改后**立即写入** `hosts.json` 的 `settings` 段（无需保存键）：
+
+| 配置 | 可选值 | 默认 |
+| --- | --- | --- |
+| 打开位置 | 新建标签页 / 当前标签页 | **新建标签页** |
+| 默认终端 | 自动 / Tabby / WezTerm / Windows Terminal / PowerShell / cmd / bash（Unix 无后三项，另加 zsh） | 自动 |
+
+- **新建标签页**：`Enter` 只负责在新终端里开会话，TUI 列表保持可用，可以连续开多台机器；`ssh` 退出后新标签页/窗口关闭（shell 预设会留在提示符，便于看报错或重连）。
+- **当前标签页**：暂停 TUI，`ssh` 直接占用当前终端，会话结束后回到列表（旧行为）。此模式下「默认终端」不生效。
+- **自动**：先看 sshm 自己跑在哪个终端里——Tabby（`TERM_PROGRAM=Tabby`）、WezTerm（`WEZTERM_PANE`）或 Windows Terminal（`WT_SESSION`）——就在该终端的新标签页打开；对应 CLI 找不到时退回 `wt -w 0 nt`，没有 `wt` 再用 PowerShell 窗口。Unix 上没有上述终端时自动挑一个终端模拟器（gnome-terminal / konsole / ptyxis / xfce4-terminal / kitty / alacritty / wezterm / xterm）。
+- **各终端的打开方式**：Tabby = `tabby run`（在运行中的 Tabby 窗口新开标签页，Tabby 自身会弹一次“Run …?”确认框）；WezTerm = `wezterm cli spawn`（当前 WezTerm 窗口新标签页）；Windows Terminal = `wt -w 0 nt`；PowerShell / cmd / bash = 用 `cmd /c start` 开独立窗口（避免 `CREATE_NEW_CONSOLE` 继承 TUI 的标准句柄、把输出画到列表上）。
+- **密码**：已保存的密码通过 `SSHM_ASKPASS_PW` 环境变量传给新进程，askpass 辅助脚本本身不含密码；Windows Terminal 会把调用方环境传给新标签页，因此保存的密码可直接免输。Tabby / WezTerm 的新标签页由它们自己的进程创建，不继承 sshm 的环境变量，`ssh` 会在新标签页里正常提示输入密码。
+- **找不到终端程序**（例如没装 Tabby 就选了 Tabby）会给出「未找到 …」提示并在列表里保留 TUI，不会静默回退；可在设置里换一个终端。
+
+设置页键位：`Tab` / `↑↓` 切换项目，`←` / `→` / `空格` / `Enter` 修改，`Esc` / `q` 返回。
+
 ## 数据存储位置
 
 配置文件为 `hosts.json`，目录按以下优先级解析：
@@ -106,11 +127,22 @@ sshm
 | macOS | `~/Library/Application Support/sshm/hosts.json` |
 | Linux | `$XDG_CONFIG_HOME/sshm/hosts.json`（未设置则 `~/.config/sshm/hosts.json`） |
 
-写入策略：先写同目录临时文件再 `rename` 覆盖（原子写）；若现有文件损坏，先备份为 `hosts.json.corrupt-<unix秒>.bak` 再写新文件，绝不静默覆盖。文件结构为 `{ "version": 1, "hosts": [...] }`。
+写入策略：先写同目录临时文件再 `rename` 覆盖（原子写）；若现有文件损坏，先备份为 `hosts.json.corrupt-<unix秒>.bak` 再写新文件，绝不静默覆盖。文件结构为：
+
+```json
+{
+  "version": 1,
+  "settings": { "open_mode": "new_tab", "terminal": "auto" },
+  "hosts": []
+}
+```
+
+`settings` 可选：旧文件缺少该段时按默认值加载；段内未知取值也会退回默认值，不会让整个文件解析失败。`open_mode` 取 `new_tab` / `current_tab`，`terminal` 取 `auto` / `tabby` / `wezterm` / `windows_terminal` / `powershell` / `cmd` / `bash` / `zsh`（跨平台同步配置时只保留当前平台存在的值）。
 
 ## 安全说明
 
 - 密码以**明文**存储在 JSON 文件中；Unix 上文件权限自动收紧为 `0600`（仅属主可读写）。建议优先使用密钥认证，密码字段留空。
+- 新标签页通过 `SSHM_ASKPASS_PW` 环境变量把密码交给 ssh；askpass 辅助脚本只 echo 该变量、本身不含密码，并在 sshm 退出时删除（位于系统临时目录）。
 - 连接测试**不校验主机指纹**：方便快速验证连通性，但理论上存在中间人风险。正式连接交给系统 `ssh` 客户端，由 `known_hosts` 校验。
 
 ## CLI
@@ -159,19 +191,20 @@ old-db               10.0.0.12:2222         db               数据库          
 ## 测试
 
 ```bash
-cargo test          # 单元 + CLI 集成 + 渲染快照，共 102 个
+cargo test          # 单元 + CLI 集成 + 渲染快照，共 130 个
 cargo clippy --all-targets   # 0 warning
 ```
 
 | 层 | 文件 | 覆盖内容 |
 | --- | --- | --- |
 | 数据模型与排序 | `src/model.rs` | 排序不变式、过滤、字段校验、端口解析 |
-| 应用状态与键位 | `src/app.rs` | 表单/列表/弹窗状态机，编辑无效配置默认有效 |
-| 持久化 | `src/storage.rs` | 原子写、损坏备份、目录优先级（临时目录隔离） |
-| 连接层 | `src/ssh/` | 探测超时/阶段分类、ssh 命令构造、askpass |
+| 设置 | `src/settings.rs` | 默认值、序列化键名、未知值降级、跨平台选项循环 |
+| 应用状态与键位 | `src/app.rs` | 表单/列表/设置/弹窗状态机，编辑无效配置默认有效 |
+| 持久化 | `src/storage.rs` | 原子写、损坏备份、目录优先级、settings 存取（临时目录隔离） |
+| 连接层 | `src/ssh/` | 探测超时/阶段分类、当前页/新标签页命令构造、askpass |
 | 导入 | `src/import.rs` | 引号/注释/通配符/去重/多名称 Host |
-| CLI | `tests/cli.rs` | 真实启动 `sshm list/import --json`，断言不泄露密码 |
-| 渲染 | `tests/render.rs` | `TestBackend` 无头渲染：列表/表单/帮助/弹窗/极窄终端 |
+| CLI | `tests/cli.rs` | 真实启动 `sshm list/import --json`，断言不泄露密码、不丢设置 |
+| 渲染 | `tests/render.rs` | `TestBackend` 无头渲染：列表/表单/设置/帮助/弹窗/极窄终端 |
 
 真实终端冒烟（启动 TUI、渲染一帧后自动退出，验证 init/restore 正常）：
 
@@ -186,10 +219,11 @@ src/
   main.rs      CLI 解析、事件循环、副作用（保存/连接/探测线程）
   app.rs       纯状态机：Mode/Dialog/FormState/Action/键位分发
   model.rs     Host/Store/SortMode，sorted_view 是唯一的排序实现
+  settings.rs  OpenMode/Terminal/Settings：打开位置、默认终端，持久化契约
   storage.rs   hosts.json 原子读写，配置目录解析
-  ssh/         probe.rs（russh 真实握手探测）+ launch.rs（拉起系统 ssh）
+  ssh/         probe.rs（russh 真实握手探测）+ launch.rs（当前页/新标签页拉起 ssh）
   import.rs    ~/.ssh/config 解析与合并
-  ui/          list / form / help / dialogs / theme 渲染
+  ui/          list / form / settings / help / dialogs / theme 渲染
 tests/
   cli.rs       端到端 CLI 行为
   render.rs    无头渲染断言
@@ -206,5 +240,6 @@ tests/
 | 连接测试 | ✅ | ✅（密码真实握手 / 无密码 `none`） |
 | 导入 ~/.ssh/config | ✅ | ✅ |
 | 最近使用时间/次数 | ❌ | ✅ |
+| 新标签页 / 默认终端可选 | ❌ | ✅ |
 
 > sshs 一栏基于其公开功能认知，如有出入以最新版本为准。

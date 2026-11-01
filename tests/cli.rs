@@ -219,6 +219,34 @@ fn config_flag_isolates_the_database() {
 }
 
 #[test]
+fn import_preserves_saved_settings() {
+    use sshm::settings::{OpenMode, Terminal};
+
+    let home = tempfile::tempdir().unwrap();
+    let config = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".ssh")).unwrap();
+    std::fs::write(
+        home.path().join(".ssh").join("config"),
+        "Host web\n    HostName 192.168.1.10\n",
+    )
+    .unwrap();
+
+    let mut store = Store::new();
+    store.settings.open_mode = OpenMode::CurrentTab;
+    store.settings.terminal = Terminal::Cmd;
+    sshm::storage::save_to(config.path(), &store).unwrap();
+
+    let envs = [("HOME", home.path()), ("USERPROFILE", home.path())];
+    let out = run(&["import"], config.path(), &envs);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    // `import` rewrites hosts.json: settings must survive that write.
+    let reloaded = sshm::storage::load_from(config.path()).unwrap();
+    assert_eq!(reloaded.settings, store.settings);
+    assert_eq!(reloaded.hosts.len(), 1);
+}
+
+#[test]
 fn sort_mode_is_accepted_by_the_store_roundtrip() {
     // Guards the CLI/SortMode contract: `--sort` values map 1:1 to SortMode.
     let dir = tempfile::tempdir().unwrap();

@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::settings::Settings;
+
 /// One saved SSH endpoint.
 ///
 /// Field order in the JSON file matches this struct. Keep names stable:
@@ -230,7 +232,10 @@ pub fn now_secs() -> i64 {
 #[derive(Debug, Clone, Default)]
 pub struct Store {
     pub hosts: Vec<Host>,
+    /// Session preference; not part of `Host` because it is global.
     pub sort_mode: SortMode,
+    /// Persisted user preferences (open mode + terminal).
+    pub settings: Settings,
 }
 
 impl Store {

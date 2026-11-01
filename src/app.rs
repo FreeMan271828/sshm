@@ -17,6 +17,36 @@ pub enum Mode {
     List,
     Form,
     Help,
+    /// Open-mode / default-terminal preferences (persisted immediately).
+    Settings,
+}
+
+/// Rows of the settings screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsField {
+    OpenMode,
+    Terminal,
+}
+
+impl SettingsField {
+    pub fn next(self) -> Self {
+        match self {
+            SettingsField::OpenMode => SettingsField::Terminal,
+            SettingsField::Terminal => SettingsField::OpenMode,
+        }
+    }
+
+    pub fn prev(self) -> Self {
+        // Only two rows, so previous is always the other row.
+        self.next()
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SettingsField::OpenMode => "打开位置",
+            SettingsField::Terminal => "默认终端",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -245,6 +275,8 @@ pub struct App {
     pub test: TestState,
     pub running: bool,
     pub help_scroll: u16,
+    /// Which settings row has focus while `mode == Mode::Settings`.
+    pub settings_focus: SettingsField,
     pub last_launched: Option<String>,
 }
 
@@ -263,6 +295,7 @@ impl App {
             test: TestState::Idle,
             running: true,
             help_scroll: 0,
+            settings_focus: SettingsField::OpenMode,
             last_launched: None,
         };
         app.sync_selection();
@@ -344,6 +377,32 @@ impl App {
         self.form = None;
         self.mode = Mode::List;
         self.sync_selection();
+    }
+
+    // ---- settings -------------------------------------------------------
+
+    pub fn open_settings(&mut self) {
+        self.settings_focus = SettingsField::OpenMode;
+        self.mode = Mode::Settings;
+    }
+
+    pub fn close_settings(&mut self) {
+        self.mode = Mode::List;
+        self.sync_selection();
+    }
+
+    /// Cycle the focused preference. The caller persists (Action::Save) so a
+    /// change is on disk before the next key press.
+    fn cycle_setting(&mut self, forward: bool) -> Action {
+        match self.settings_focus {
+            SettingsField::OpenMode => {
+                self.store.settings.open_mode = self.store.settings.open_mode.cycle(forward);
+            }
+            SettingsField::Terminal => {
+                self.store.settings.terminal = self.store.settings.terminal.cycle(forward);
+            }
+        }
+        Action::Save
     }
 
     /// Validate + commit the form into the store. Returns the saved host.
@@ -453,6 +512,7 @@ impl App {
             Mode::List => self.on_key_list(key),
             Mode::Form => self.on_key_form(key),
             Mode::Help => self.on_key_help(key),
+            Mode::Settings => self.on_key_settings(key),
         }
     }
 
@@ -580,12 +640,46 @@ impl App {
             },
             KeyCode::Char('i') => Action::Import,
             KeyCode::Char('r') => Action::RefreshFromDisk,
+            KeyCode::Char('o') => {
+                self.open_settings();
+                Action::None
+            }
             KeyCode::Char('?') | KeyCode::F(1) => {
                 self.mode = Mode::Help;
                 self.help_scroll = 0;
                 Action::None
             }
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => Action::Quit,
+            _ => Action::None,
+        }
+    }
+
+    fn on_key_settings(&mut self, key: KeyEvent) -> Action {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('o') => {
+                self.close_settings();
+                Action::None
+            }
+            KeyCode::Tab => {
+                self.settings_focus = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.settings_focus.prev()
+                } else {
+                    self.settings_focus.next()
+                };
+                Action::None
+            }
+            KeyCode::Up => {
+                self.settings_focus = SettingsField::OpenMode;
+                Action::None
+            }
+            KeyCode::Down => {
+                self.settings_focus = SettingsField::Terminal;
+                Action::None
+            }
+            KeyCode::Left | KeyCode::Char('h') => self.cycle_setting(false),
+            KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(' ') | KeyCode::Enter => {
+                self.cycle_setting(true)
+            }
             _ => Action::None,
         }
     }
@@ -966,5 +1060,59 @@ mod tests {
         app.delete_selected();
         let quit = app.on_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
         assert_eq!(quit, Action::Quit);
+    }
+
+    #[test]
+    fn o_opens_settings_and_esc_returns_to_list() {
+        let mut app = app_with(vec![host("1", true, None, 0)]);
+        assert_eq!(press(&mut app, KeyCode::Char('o')), Action::None);
+        assert_eq!(app.mode, Mode::Settings);
+        assert_eq!(app.settings_focus, SettingsField::OpenMode);
+        press(&mut app, KeyCode::Esc);
+        assert_eq!(app.mode, Mode::List);
+    }
+
+    #[test]
+    fn settings_changes_cycle_and_ask_for_a_save() {
+        let mut app = app_with(vec![]);
+        app.open_settings();
+
+        // Left/right cycle the focused row and persist immediately.
+        assert_eq!(press(&mut app, KeyCode::Left), Action::Save);
+        assert_eq!(
+            app.store.settings.open_mode,
+            crate::settings::OpenMode::CurrentTab
+        );
+        assert_eq!(press(&mut app, KeyCode::Right), Action::Save);
+        assert_eq!(
+            app.store.settings.open_mode,
+            crate::settings::OpenMode::NewTab
+        );
+
+        // Tab moves focus to the terminal row; Down/Up also move focus.
+        press(&mut app, KeyCode::Tab);
+        assert_eq!(app.settings_focus, SettingsField::Terminal);
+        press(&mut app, KeyCode::Up);
+        assert_eq!(app.settings_focus, SettingsField::OpenMode);
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.settings_focus, SettingsField::Terminal);
+
+        let before = app.store.settings.terminal;
+        assert_eq!(press(&mut app, KeyCode::Char(' ')), Action::Save);
+        assert_ne!(app.store.settings.terminal, before);
+    }
+
+    #[test]
+    fn settings_never_steal_host_editing_keys() {
+        // While the settings screen is open, letters that are commands in the
+        // list (a/e/d/x/t/i/r) must not fire.
+        let mut app = app_with(vec![host("1", true, None, 0)]);
+        app.open_settings();
+        for c in ['a', 'e', 'd', 'x', 't', 'i', 'r'] {
+            assert_eq!(press(&mut app, KeyCode::Char(c)), Action::None);
+        }
+        assert_eq!(app.mode, Mode::Settings);
+        assert!(app.form.is_none());
+        assert!(app.dialog.is_none());
     }
 }

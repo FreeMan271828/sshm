@@ -8,6 +8,7 @@ use crossterm::event::{self, Event, KeyEventKind};
 use sshm::app::{Action, App, TestCtx};
 use sshm::import;
 use sshm::model::{Host, SortMode};
+use sshm::settings::OpenMode;
 use sshm::ssh::{self, TestOutcome};
 use sshm::storage;
 use sshm::ui;
@@ -32,7 +33,11 @@ sshm — 终端 SSH 连接管理器
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match dispatch(&args) {
+    let result = dispatch(&args);
+    // Helper scripts (askpass, Tabby run wrappers) live for the process
+    // lifetime; remove them on every exit path.
+    ssh::cleanup_temp_files();
+    match result {
         Ok(true) => {}
         Ok(false) => {
             print!("{HELP}");
@@ -280,13 +285,24 @@ fn handle_action(
             app.record_use(&host.id);
             storage::save(&app.store).map_err(|e| e.to_string())?;
             let name = host.display_name();
-            // Suspend the TUI so the ssh session owns the terminal.
-            ratatui::restore();
-            let result = ssh::run_ssh(&host);
-            let _ = ratatui::init();
-            match result {
-                Ok(status) => app.toast(format!("{} 会话结束 ({status})", name)),
-                Err(e) => app.toast(format!("启动 ssh 失败: {e}")),
+            match app.store.settings.open_mode {
+                OpenMode::CurrentTab => {
+                    // Suspend the TUI so the ssh session owns the terminal.
+                    ratatui::restore();
+                    let result = ssh::run_ssh(&host);
+                    let _ = ratatui::init();
+                    match result {
+                        Ok(status) => app.toast(format!("{} 会话结束 ({status})", name)),
+                        Err(e) => app.toast(format!("启动 ssh 失败: {e}")),
+                    }
+                }
+                OpenMode::NewTab => {
+                    // The TUI keeps running: the session lives in another tab.
+                    match ssh::open_in_new_terminal(&host, app.store.settings.terminal) {
+                        Ok(terminal) => app.toast(format!("{} 已在新终端打开（{terminal}）", name)),
+                        Err(e) => app.toast(format!("打开新终端失败: {e}")),
+                    }
+                }
             }
         }
         Action::StartTest(ctx, target) => {

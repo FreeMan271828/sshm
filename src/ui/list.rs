@@ -188,6 +188,7 @@ fn draw_footer(app: &App, frame: &mut Frame, area: Rect) {
         ("s", "排序"),
         ("i", "导入"),
         ("r", "重载"),
+        ("o", "设置"),
         ("?", "帮助"),
         ("q", "退出"),
     ];

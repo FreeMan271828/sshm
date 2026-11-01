@@ -12,6 +12,7 @@ use std::sync::{OnceLock, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Host, Store};
+use crate::settings::Settings;
 
 /// On-disk envelope. `version` guards future migrations.
 #[derive(Debug, Serialize, Deserialize)]
@@ -20,6 +21,10 @@ pub struct Db {
     pub version: u32,
     #[serde(default)]
     pub hosts: Vec<Host>,
+    /// Preferences. Optional so files written before settings existed still
+    /// load (they simply fall back to the defaults).
+    #[serde(default)]
+    pub settings: Settings,
 }
 
 impl Db {
@@ -27,6 +32,7 @@ impl Db {
         Self {
             version: 1,
             hosts: store.hosts.clone(),
+            settings: store.settings,
         }
     }
 
@@ -34,6 +40,7 @@ impl Db {
         Store {
             hosts: self.hosts,
             sort_mode: crate::model::SortMode::Default,
+            settings: self.settings,
         }
     }
 }
@@ -234,6 +241,37 @@ mod tests {
         assert_eq!(loaded.hosts[0].password.as_deref(), Some("secret"));
         // sort mode is not persisted (session preference) — defaults.
         assert_eq!(loaded.sort_mode, SortMode::Default);
+    }
+
+    #[test]
+    fn settings_roundtrip_through_the_file() {
+        use crate::settings::{OpenMode, Terminal};
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::new();
+        store.settings.open_mode = OpenMode::CurrentTab;
+        store.settings.terminal = Terminal::PowerShell;
+        save_to(dir.path(), &store).unwrap();
+
+        let raw = std::fs::read_to_string(dir.path().join("hosts.json")).unwrap();
+        assert!(raw.contains("\"settings\""), "{raw}");
+        assert!(raw.contains("\"open_mode\": \"current_tab\""), "{raw}");
+
+        let loaded = load_from(dir.path()).unwrap();
+        assert_eq!(loaded.settings, store.settings);
+    }
+
+    #[test]
+    fn legacy_file_without_settings_loads_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("hosts.json"),
+            r#"{"version":1,"hosts":[{"id":"1","host":"10.0.0.1"}]}"#,
+        )
+        .unwrap();
+        let loaded = load_from(dir.path()).unwrap();
+        assert_eq!(loaded.hosts.len(), 1);
+        assert_eq!(loaded.settings, crate::settings::Settings::default());
     }
 
     #[test]

@@ -5,12 +5,14 @@
 //! `src/app.rs` and `src/main.rs`):
 //! - `ProbeTarget` / `TestOutcome` / `Stage` / `AuthKind`
 //! - `spawn_probe(target) -> mpsc::Receiver<TestOutcome>`
-//! - `run_ssh(host) -> io::Result<ExitStatus>`
+//! - `run_ssh(host) -> io::Result<ExitStatus>` (current terminal)
+//! - `open_in_new_terminal(host, terminal) -> io::Result<&'static str>`
+//! - `cleanup_temp_files()`
 //! - `ssh_command_string(host) -> String`
 //!
 //! Layout: [`probe`] owns the connection-test pipeline (worker thread, tokio
 //! runtime, stage classification, timeout, live tests); [`launch`] owns the
-//! interactive session launch (askpass plumbing, cleanup).
+//! interactive session launch (current tab, new tab/window, askpass cleanup).
 
 mod launch;
 mod probe;
@@ -19,6 +21,7 @@ use std::io;
 use std::sync::mpsc;
 
 use crate::model::Host;
+use crate::settings::Terminal;
 
 /// What to test a connection against.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,6 +137,19 @@ pub fn spawn_probe(target: ProbeTarget) -> mpsc::Receiver<TestOutcome> {
 /// The caller (main.rs) has already suspended the TUI terminal.
 pub fn run_ssh(host: &Host) -> io::Result<std::process::ExitStatus> {
     launch::run_ssh(host)
+}
+
+/// Open an interactive ssh session in a new terminal tab/window. The TUI keeps
+/// running; the returned label names the terminal that was launched (e.g.
+/// `"Windows Terminal"`).
+pub fn open_in_new_terminal(host: &Host, terminal: Terminal) -> io::Result<&'static str> {
+    launch::open_in_new_terminal(host, terminal)
+}
+
+/// Delete helper scripts kept alive for the process (askpass, Tabby run
+/// scripts). Call once on exit.
+pub fn cleanup_temp_files() {
+    launch::cleanup_temp_files()
 }
 
 /// `user@host`, or bare `host` when no username is configured.
